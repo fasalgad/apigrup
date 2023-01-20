@@ -11,6 +11,8 @@ using System.Security.Claims;
 using System;
 using Microsoft.EntityFrameworkCore;
 using ApiGrup.Domain.Entities;
+using SendGrid;
+using SendGrid.Helpers.Mail;
 
 namespace ApiGrup.Application.Login.Commands
 {
@@ -18,6 +20,7 @@ namespace ApiGrup.Application.Login.Commands
     {
         public string Username { get; set; }
         public string Password { get; set; }
+
     }
 
     public class LoginCommandHandler : IRequestHandler<LoginCommand, TokenDto>
@@ -42,7 +45,13 @@ namespace ApiGrup.Application.Login.Commands
                 throw new UnauthorizedAccessException();
 
             if (!_passwordService.Check(user.Password, request.Password))
+            {
+                user.CountErrors++;
+                await this._context.SaveChangesAsync(cancellationToken);
+                await Notificacion(user);
                 throw new UnauthorizedAccessException();
+            }
+
 
             var token = GenerateToken(user);
 
@@ -78,5 +87,27 @@ namespace ApiGrup.Application.Login.Commands
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+
+        private async Task Notificacion(ApiUser user)
+        {
+
+            // var client = new SendGridClient(_appSettings.SENDGRID_API_KEY);
+            var client = new SendGridClient("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");
+            var from = new EmailAddress("salgado.fabian@gmail.com", "Soporte");
+            var subject = "Error";
+            var to = new EmailAddress(user.Email, user.Username);
+            var plainTextContent = @"¡Hola " + user.Username + @"!
+                                Hola, detectamos que se intentó ingresar a tu cuenta, si no fuiste tú, te encargamos ingresar nuevamente al sitio y cambiar la contraseña "
+                                + "\n Número de intentos:" + user.CountErrors + @"
+                                ";
+            var htmlContent = @" 
+                        <h1>¡Hola " + user.Username + @"!</h1>
+                        <p>Hola, detectamos que se intentó ingresar a tu cuenta, si no fuiste tú, te encargamos ingresar nuevamente al sitio y cambiar la contraseña </ p>
+                        <p>Número de intentos:" + user.CountErrors + @"</p>
+                       ";
+            var msg = MailHelper.CreateSingleEmail(from, to, subject, plainTextContent, htmlContent);
+            Response response = await client.SendEmailAsync(msg);
+        }
+
     }
 }
